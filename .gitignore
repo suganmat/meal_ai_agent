@@ -1,0 +1,4 @@
+.env
+.env.save
+tests/
+meal_ai_agent.log
