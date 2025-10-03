@@ -3,7 +3,7 @@ Profile Collection Agent for gathering user information.
 """
 import logging
 from typing import Dict, Any, Optional, List
-from ..services.perplexity_client import PerplexityClient
+from ..services.openrouter_client import OpenRouterClient
 from ..services.neo4j_service import Neo4jService
 from ..models.user_models import UserProfile, MedicalCondition
 from ..utils.session_manager import SessionManager
@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 class ProfileCollectorAgent:
     """Agent responsible for collecting user profile information."""
     
-    def __init__(self, perplexity_client: PerplexityClient, neo4j_service: Neo4jService, session_manager: SessionManager):
+    def __init__(self, openrouter_client: OpenRouterClient, neo4j_service: Neo4jService, session_manager: SessionManager):
         """
         Initialize the profile collector agent.
         
         Args:
-            perplexity_client: Perplexity API client
+            openrouter_client: OpenRouter API client
             neo4j_service: Neo4j database service
             session_manager: Session manager instance
         """
-        self.perplexity_client = perplexity_client
+        self.openrouter_client = openrouter_client
         self.neo4j_service = neo4j_service
         self.session_manager = session_manager
         
@@ -103,7 +103,7 @@ CURRENT STATE:
             
             # Single API call using the comprehensive prompt
             
-            response = self.perplexity_client.chat_completion([
+            response = self.openrouter_client.chat_completion([
                 {"role": "system", "content": self.prompt + context_info},
                 {"role": "user", "content": message}
             ])

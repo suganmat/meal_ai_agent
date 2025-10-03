@@ -3,7 +3,7 @@ Intent Detection Agent for analyzing user input to determine conversation intent
 """
 import logging
 from typing import Dict, Any, Optional
-from ..services.perplexity_client import PerplexityClient
+from ..services.openrouter_client import OpenRouterClient
 from ..utils.session_manager import SessionManager
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph.message import add_messages
@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 class IntentDetectionAgent:
     """Agent responsible for detecting user intent from messages."""
     
-    def __init__(self, perplexity_client: PerplexityClient, session_manager: SessionManager):
+    def __init__(self, openrouter_client: OpenRouterClient, session_manager: SessionManager):
         """
         Initialize the intent detection agent.
         
         Args:
-            perplexity_client: Perplexity API client
+            openrouter_client: OpenRouter API client
             session_manager: Session manager instance
         """
-        self.perplexity_client = perplexity_client
+        self.openrouter_client = openrouter_client
         self.session_manager = session_manager
         
         # Intent detection prompt
@@ -63,7 +63,7 @@ class IntentDetectionAgent:
             intent_prompt = self.prompt.format(user_message=message)
             
             
-            response = self.perplexity_client.chat_completion([
+            response = self.openrouter_client.chat_completion([
                 {"role": "user", "content": intent_prompt}
             ])
             

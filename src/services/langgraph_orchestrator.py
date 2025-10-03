@@ -11,6 +11,7 @@ from ..agents.meal_suggester import MealSuggesterAgent
 from ..agents.satisfaction_checker import SatisfactionCheckerAgent
 from ..agents.intent_detection_agent import IntentDetectionAgent
 from ..agents.normal_chat_agent import NormalChatAgent
+from ..services.openrouter_client import OpenRouterClient
 from ..services.perplexity_client import PerplexityClient
 from ..services.neo4j_service import Neo4jService
 from ..utils.session_manager import SessionManager
@@ -22,16 +23,17 @@ class MealAgentOrchestrator:
     
     def __init__(self):
         """Initialize the orchestrator with all required services."""
+        self.openrouter_client = OpenRouterClient()
         self.perplexity_client = PerplexityClient()
         self.neo4j_service = Neo4jService()
         self.session_manager = SessionManager()
         
         # Initialize agents with shared session manager
-        self.intent_detection = IntentDetectionAgent(self.perplexity_client, self.session_manager)
-        self.normal_chat = NormalChatAgent(self.perplexity_client, self.session_manager)
-        self.profile_collector = ProfileCollectorAgent(self.perplexity_client, self.neo4j_service, self.session_manager)
-        self.meal_suggester = MealSuggesterAgent(self.perplexity_client, self.neo4j_service, self.session_manager)
-        self.satisfaction_checker = SatisfactionCheckerAgent(self.perplexity_client, self.session_manager)
+        self.intent_detection = IntentDetectionAgent(self.openrouter_client, self.session_manager)
+        self.normal_chat = NormalChatAgent(self.openrouter_client, self.session_manager)
+        self.profile_collector = ProfileCollectorAgent(self.openrouter_client, self.neo4j_service, self.session_manager)
+        self.meal_suggester = MealSuggesterAgent(self.openrouter_client, self.perplexity_client, self.neo4j_service, self.session_manager)
+        self.satisfaction_checker = SatisfactionCheckerAgent(self.openrouter_client, self.session_manager)
         
         # Build the workflow graph
         self.workflow = self._build_workflow()
@@ -100,7 +102,8 @@ class MealAgentOrchestrator:
             "meal_suggestion",
             self._route_from_meal_suggestion,
             {
-                "satisfaction_check": "satisfaction_check"
+                "satisfaction_check": "satisfaction_check",
+                "end": END
             }
         )
         
@@ -424,13 +427,16 @@ class MealAgentOrchestrator:
         session = self.session_manager.get_session(session_id)
         
         if not session:
-            return "satisfaction_check"  # End workflow if no session
+            return "end"
         
-        # Check if meal suggestion is complete
-        if session.get("current_state") == "satisfaction_check":
+        # Check if meal suggestion has already been generated and displayed
+        meal_data = session.get("meal_suggestion", {})
+        if meal_data.get("suggestion"):
+            # Meal suggestion already generated, route to satisfaction check
             return "satisfaction_check"
         else:
-            return "satisfaction_check"  # End workflow after meal suggestion
+            # First time generating meal suggestion, end workflow to display it
+            return "end"
     
     def _route_from_satisfaction(self, state: Dict[str, Any]) -> str:
         """Route from satisfaction check based on user response."""

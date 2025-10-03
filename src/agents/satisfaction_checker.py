@@ -3,7 +3,7 @@ Satisfaction Checker Agent for ensuring user satisfaction with meal suggestions.
 """
 import logging
 from typing import Dict, Any, Optional, List
-from ..services.perplexity_client import PerplexityClient
+from ..services.openrouter_client import OpenRouterClient
 from ..utils.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 class SatisfactionCheckerAgent:
     """Agent responsible for checking user satisfaction and handling feedback."""
     
-    def __init__(self, perplexity_client: PerplexityClient, session_manager: SessionManager):
+    def __init__(self, openrouter_client: OpenRouterClient, session_manager: SessionManager):
         """
         Initialize the satisfaction checker agent.
         
         Args:
-            perplexity_client: Perplexity API client
+            openrouter_client: OpenRouter API client
             session_manager: Session manager instance
         """
-        self.perplexity_client = perplexity_client
+        self.openrouter_client = openrouter_client
         self.session_manager = session_manager
         
         # Satisfaction checker prompt
@@ -84,7 +84,7 @@ Always be supportive and solution-focused. Use natural language understanding ra
             # Get conversation history
             history = self.session_manager.get_conversation_history(session_id, limit=10)
             
-            # Build messages for LLM - simplified format to avoid Perplexity API issues
+            # Build messages for LLM - simplified format to avoid OpenRouter API issues
             messages = [
                 {"role": "system", "content": self.prompt},
                 {"role": "user", "content": f"Current meal suggestion: {session.get('meal_suggestion', {})}\nCurrent satisfaction state: {session.get('satisfaction', {})}\nUser message: {message}"}
@@ -92,7 +92,7 @@ Always be supportive and solution-focused. Use natural language understanding ra
             
             # Get LLM response
             
-            response = self.perplexity_client.chat_completion(messages)
+            response = self.openrouter_client.chat_completion(messages)
             agent_response = response["choices"][0]["message"]["content"]
             
             # Add messages to history
@@ -172,7 +172,7 @@ Respond with ONLY one word: SATISFIED, NOT_SATISFIED, or NEUTRAL
 """
             
             
-            response = self.perplexity_client.chat_completion([
+            response = self.openrouter_client.chat_completion([
                 {"role": "user", "content": sentiment_prompt}
             ])
             
@@ -214,7 +214,7 @@ Respond with ONLY one word: YES or NO
 """
             
             
-            response = self.perplexity_client.chat_completion([
+            response = self.openrouter_client.chat_completion([
                 {"role": "user", "content": wants_new_prompt}
             ])
             

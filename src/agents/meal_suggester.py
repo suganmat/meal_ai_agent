@@ -3,6 +3,7 @@ Meal Suggestion Agent for creating personalized meal recommendations.
 """
 import logging
 from typing import Dict, Any, Optional, List
+from ..services.openrouter_client import OpenRouterClient
 from ..services.perplexity_client import PerplexityClient
 from ..services.neo4j_service import Neo4jService
 from ..models.user_models import UserProfile
@@ -10,22 +11,23 @@ from ..models.meal_models import MealSuggestion, NutritionInfo, MealType
 from ..utils.session_manager import SessionManager
 from ..models.user_models import UserProfile, MedicalCondition
 from langchain_core.tools import tool
-from ..services.perplexity_client import PerplexityClient
+from ..services.openrouter_client import OpenRouterClient
 logger = logging.getLogger(__name__)
 
 
 class MealSuggesterAgent:
     """Agent responsible for suggesting personalized meals."""
     
-    def __init__(self, perplexity_client: PerplexityClient, neo4j_service: Neo4jService, session_manager: SessionManager):
+    def __init__(self, openrouter_client: OpenRouterClient, perplexity_client: PerplexityClient, neo4j_service: Neo4jService, session_manager: SessionManager):
         """
         Initialize the meal suggester agent.
         
         Args:
-            perplexity_client: Perplexity API client
+            OpenRouterClient: OpenRouter API client
             neo4j_service: Neo4j database service
             session_manager: Session manager instance
         """
+        self.openrouter_client = openrouter_client
         self.perplexity_client = perplexity_client
         self.tools = [self.search_recipes_tool]
         self.session_manager = session_manager
@@ -42,6 +44,14 @@ class MealSuggesterAgent:
             2. Analyze the user profile provided and create appropriate meal suggestions
             3. Suggest ONE specific meal with complete details
             4. If user was previously dissatisfied, ensure the new suggestion is DIFFERENT from previous ones
+
+            IMPORTANT: Use the user profile information intelligently to:
+            - Consider any medical conditions and their dietary implications
+            - Adjust recommendations based on age, BMI, and health status
+            - Respect cuisine preferences and cultural considerations
+            - Provide appropriate portion sizes and nutritional balance
+            - Use the search_recipes_tool to find real, authentic recipes
+
 
             MEAL SUGGESTION FORMAT:
             **[Meal Name]**
@@ -64,9 +74,7 @@ class MealSuggesterAgent:
             - search_recipes_tool: Search for real recipes using Perplexity API
 
 
-            {user_profile_data}
-
-            {specific_instructions}"""
+            {user_profile_data}"""
     
     def process_message(self, message: str, session_id: str) -> str:
         """
@@ -123,7 +131,7 @@ Make sure to suggest something completely different in terms of cuisine, ingredi
             
             # Get LLM response
             
-            response = self.perplexity_client.chat_completion_with_tools(messages, tools=self.tools)
+            response = self.openrouter_client.chat_completion_with_tools(messages, tools=self.tools)
             agent_response = response["choices"][0]["message"]["content"]
             
             # Add messages to history
@@ -177,112 +185,46 @@ Make sure to suggest something completely different in terms of cuisine, ingredi
         # Build user profile data section
         user_profile_data = self._build_user_profile_section(user_profile)
         
-        # Build specific instructions section
-        specific_instructions = self._build_specific_instructions(user_profile)
         
         # Inject parameters into the template
         personalized_prompt = self.prompt.format(
-            user_profile_data=user_profile_data,
-            specific_instructions=specific_instructions
+            user_profile_data=user_profile_data
         )
         
         return personalized_prompt
 
     def _build_user_profile_section(self, user_profile: UserProfile) -> str:
         """
-        Build the user profile data section for the prompt.
+        Build user profile section for the prompt.
         
         Args:
             user_profile: User profile data
             
         Returns:
-            Formatted user profile section
+            Formatted user profile string
         """
-        profile_section = """
-            USER PROFILE DATA:
-            - Name: {name}
-            - Age: {age} years old
-            - Primary Cuisine Preference: {primary_cuisine}"""
-
-        if user_profile.secondary_cuisine:
-            profile_section += "\n- Secondary Cuisine Preference: {secondary_cuisine}"
+        profile_info = []
         
-        if user_profile.height and user_profile.weight:
-            profile_section += """
-            - Height: {height} cm
-            - Weight: {weight} kg
-            - BMI: {bmi} ({bmi_category})"""
+        profile_info.append(f"Name: {user_profile.name}")
+        profile_info.append(f"Age: {user_profile.age} years")
+        profile_info.append(f"Height: {user_profile.height} cm")
+        profile_info.append(f"Weight: {user_profile.weight} kg")
+        profile_info.append(f"BMI: {user_profile.bmi:.1f}")
         
         if user_profile.medical_conditions:
-            conditions = [f"{mc.condition} ({mc.intensity})" for mc in user_profile.medical_conditions]
-            profile_section += "\n- Medical Conditions: {medical_conditions}"
-            
-            # Format the conditions string
-            conditions_str = ', '.join(conditions)
+            conditions = [f"{cond.condition} ({cond.intensity})" for cond in user_profile.medical_conditions]
+            profile_info.append(f"Medical Conditions: {', '.join(conditions)}")
         else:
-            conditions_str = "None"
+            profile_info.append("Medical Conditions: None")
         
-        # Format the profile section with actual data
-        formatted_section = profile_section.format(
-            name=user_profile.name,
-            age=user_profile.age,
-            primary_cuisine=user_profile.primary_cuisine,
-            secondary_cuisine=user_profile.secondary_cuisine or "Not specified",
-            height=user_profile.height or "Not provided",
-            weight=user_profile.weight or "Not provided",
-            bmi=user_profile.bmi or "Cannot calculate",
-            bmi_category=user_profile.bmi_category or "Unknown",
-            medical_conditions=conditions_str
-        )
-        
-        return formatted_section
-
-    def _build_specific_instructions(self, user_profile: UserProfile) -> str:
-        """
-        Build specific instructions based on user profile.
-        
-        Args:
-            user_profile: User profile data
-            
-        Returns:
-            Specific instructions string
-        """
-        instructions = []
-        
-        # Medical condition considerations
-        if user_profile.medical_conditions:
-            for condition in user_profile.medical_conditions:
-                if condition.condition.lower() in ['diabetes', 'diabetic']:
-                    instructions.append("- Avoid high-sugar ingredients and focus on low-glycemic index foods")
-                elif condition.condition.lower() in ['hypertension', 'high blood pressure']:
-                    instructions.append("- Minimize sodium content and avoid processed foods")
-                elif condition.condition.lower() in ['heart disease', 'cardiac']:
-                    instructions.append("- Focus on heart-healthy ingredients like omega-3 rich foods")
-                elif condition.condition.lower() in ['obesity', 'weight management']:
-                    instructions.append("- Suggest portion-controlled meals with balanced macronutrients")
-        
-        # BMI-based considerations
-        if user_profile.bmi:
-            if user_profile.bmi < 18.5:
-                instructions.append("- Suggest nutrient-dense meals to support healthy weight gain")
-            elif user_profile.bmi > 30:
-                instructions.append("- Focus on lower-calorie, high-fiber options for weight management")
-        
-        # Age-based considerations
-        if user_profile.age < 18:
-            instructions.append("- Ensure meals support healthy growth and development")
-        elif user_profile.age > 65:
-            instructions.append("- Consider easier-to-digest options and nutrient absorption")
-        
-        # Cuisine-specific instructions
         if user_profile.primary_cuisine:
-            instructions.append(f"- Prioritize authentic {user_profile.primary_cuisine} cuisine flavors and techniques")
+            profile_info.append(f"Primary Cuisine Preference: {user_profile.primary_cuisine}")
         
-        if not instructions:
-            instructions.append("- Focus on balanced nutrition and appealing flavors")
+        if user_profile.secondary_cuisine:
+            profile_info.append(f"Secondary Cuisine Preference: {user_profile.secondary_cuisine}")
         
-        return "\n".join(instructions)
-
+        return "\n".join(profile_info)
+    
     def _update_session_state(self, session_id: str, user_message: str, agent_response: str) -> None:
         """
         Update session state based on conversation.
@@ -294,9 +236,7 @@ Make sure to suggest something completely different in terms of cuisine, ingredi
                     "suggestion": agent_response
                 },
                 "satisfaction": {}  # Clear previous satisfaction data
-            })
-            self.session_manager.update_session_state(session_id, "satisfaction_check")
-            
+            })            
         except Exception as e:
             logger.error(f"Error updating session state: {e}")
 
@@ -314,10 +254,11 @@ Make sure to suggest something completely different in terms of cuisine, ingredi
             # Convert medical conditions
             medical_conditions = []
             for condition_data in profile_data.get("medical_conditions", []):
-                medical_conditions.append(MedicalCondition(
-                    condition=condition_data["condition"],
-                    intensity=condition_data["intensity"]
-                ))
+                if isinstance(condition_data, dict) and "condition" in condition_data and "intensity" in condition_data:
+                    medical_conditions.append(MedicalCondition(
+                        condition=condition_data["condition"],
+                        intensity=condition_data["intensity"]
+        ))
             
             return UserProfile(
                 name=profile_data["name"],
